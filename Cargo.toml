@@ -1,0 +1,61 @@
+[package]
+name = "pocket-relay-plugin"
+version = "0.2.0"
+edition = "2021"
+description = "ASI plugin for ME3 to allow playing on Pocket Relay servers"
+repository = "https://github.com/PocketRelay/PocketRelayClientPlugin"
+license = "MIT"
+readme = "README.md"
+authors = ["Jacobtread <jacobtread@gmail.com>"]
+keywords = ["Hooking"]
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+pocket-relay-desktop-client-rpc = { path = "../PocketRelayDesktop/crates/client-rpc", version = "0.0.0" }
+
+# Logging
+env_logger = "0.11"
+log = "0.4"
+log-panics = { version = "2", features = ["with-backtrace"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+futures = "0.3"
+minhook = "0.9.0"
+anyhow = "1.0.104"
+
+tarpc = { version = "0.38", features = ["tokio1", "serde1", "serde-transport-json", "tcp"] }
+parking_lot = "0.13.0"
+
+[dependencies.windows-sys]
+version = "0.61"
+features = [
+  # Foundational types
+  "Win32_Foundation",
+  # For DLL_PROCESS_ATTACH and DLL_PROCESS_DETACH constants
+  "Win32_System_SystemServices",
+  # Requried for virtual protecting memory
+  "Win32_System_Memory",
+  # Required for allocating consoles
+  "Win32_System_Console",
+  # Required for HOSTENT structure and gethostbyname function
+  "Win32_Networking_WinSock",
+  # APIs to suspend threads
+  "Win32_System_Diagnostics_ToolHelp",
+  "Win32_System_LibraryLoader",
+]
+
+# Tokio async runtime
+[dependencies.tokio]
+version = "1"
+features = ["full"]
+
+[profile.release]
+# opt-level = 0
+strip = true
+lto = true
+codegen-units = 1

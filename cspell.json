@@ -1,0 +1,13 @@
+{
+  "minWordLength": 5,
+  "words": [
+    "gethostbyname",
+    "HOSTENT",
+    "minhook",
+    "PCSTR",
+    "REDIRECTOR",
+    "SNAPTHREAD",
+    "THREADENTRY",
+    "Toolhelp"
+  ]
+}

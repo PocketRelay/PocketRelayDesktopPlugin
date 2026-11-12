@@ -1,0 +1,6 @@
+[build]
+target = "i686-win7-windows-msvc"
+rustflags = ["-Ctarget-feature=+crt-static"]
+
+[unstable]
+build-std = ["core", "alloc", "std", "proc_macro", "test"]

@@ -1,0 +1,7 @@
+/target
+.release
+scripts
+.vscode
+
+/private
+.megamemory/*
