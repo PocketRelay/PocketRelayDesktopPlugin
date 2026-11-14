@@ -1,0 +1,134 @@
+use crate::{
+    game::{
+        core::{FString, UFunction, UObject, UObjectExt},
+        sfxgame::{FSFXOnlineMOTDInfo, USFXOnlineComponentUI},
+    },
+    hooks::pattern::find_pattern,
+};
+use log::debug;
+use minhook::MinHook;
+use serde::{Deserialize, Serialize};
+use std::{os::raw::c_void, sync::LazyLock};
+
+type ProcessEventFn =
+    unsafe extern "thiscall" fn(*mut UObject, *mut UFunction, *mut c_void, *mut c_void);
+
+static ORIGINAL_PROCESS_EVENT: LazyLock<(ProcessEventFn, ProcessEventFn)> =
+    LazyLock::new(|| unsafe {
+        let Some(target_fn) = find_pattern(
+            PROCESS_EVENT_START_OFFSET,
+            PROCESS_EVENT_END_OFFSET,
+            PROCESS_EVENT_MASK,
+            PROCESS_EVENT_OP_CODES,
+        ) else {
+            panic!("Failed to find process_event hook position");
+        };
+
+        debug!("Found ProcessEvent @ {:#016x}", target_fn as usize);
+
+        let target_fn: ProcessEventFn = std::mem::transmute(target_fn);
+        let original = MinHook::create_hook(target_fn as _, fake_process_event as _)
+            .expect("failed to create hook");
+        let original: ProcessEventFn = std::mem::transmute(original);
+        (original, target_fn)
+    });
+
+/// Memory address the process event function is stored at
+// const PROCESS_EVENT_OFFSET: usize = 0x00453120;
+
+/// Address to start matching from
+const PROCESS_EVENT_START_OFFSET: usize = 0x401000;
+/// Address to end matching at
+const PROCESS_EVENT_END_OFFSET: usize = 0xFFFFFF;
+/// Mask to use while matching the opcodes below
+const PROCESS_EVENT_MASK: &str = "xxxxxxxxxxxx?xxxxxxxxxxxx?xxxxxxxxxxxxx?xxxxxx?x????????x?xx?x?x?x?xx?xx?xxxxxxxxxxx?xx?x?x?x?xxxxxxxx?xxxx?x?x?xx?x?x?x?xxxxxxxx?xxx?xx?xx?x?x?x?xx?xx?x?xx?x?xxxx?xxxxxxxxx?x?x";
+/// Op codes to match against
+const PROCESS_EVENT_OP_CODES: &[u8] = &[
+    0x55, // push ebp
+    0x8B, 0xEC, // mov ebp, esp
+    0x6A, 0xFF, // push 0xFF
+    0x68, 0xC8, 0x43, 0x1A, 0x01, // push 0x1A43C8
+    0x64, 0xA1, 0x00, 0x00, 0x00, 0x00, // mov eax, [fs:0x0]
+    0x50, // push eax
+    0x83, 0xEC, 0x48, // sub esp, 0x48
+    0xA1, 0x80, 0x5B, 0x90, 0x01, // mov eax, [0x1905B80]
+    0x33, 0xC5, // xor eax, ebp
+    0x89, 0x45, 0xEC, // mov [ebp-0x14], eax
+    0x53, // push ebx
+    0x56, // push esi
+    0x57, // push edi
+    0x50, // push eax
+    0x8D, 0x45, 0xF4, // lea eax, [ebp-0xC]
+    0x64, 0xA3, 0x00, 0x00, 0x00, 0x00, // mov [fs:0x0], eax
+    0x8B, 0xF1, // mov esi, ecx
+    0x89, 0x75, 0xE8, // mov [ebp-0x18], esi
+    0x8B, 0x5D, 0x08, // mov ebx, [ebp+0x8]
+    0xF7, 0x83, 0x88, 0x00, 0x00, 0x00, // test dword ptr [ebx+0x88], 0
+    0x02, 0x04, 0x00, 0x00, // add [ebx+0x4], al
+    0x0F, 0x84, 0x21, 0x02, 0x00, 0x00, // je 0x222
+    0x83, 0x7B, 0x04, 0xFF, // cmp dword ptr [ebx+0x4], 0xFF
+    0x75, 0x13, // jnz 0x13
+    0x6A, 0x01, // push 0x1
+    0x6A, 0x01, // push 0x1
+    0x68, 0x30, 0x71, 0x6A, 0x01, // push 0x1A6730
+    0x33, 0xC9, // xor ecx, ecx
+    0x8D, 0x55, 0xE0, // lea edx, [ebp-0x20]
+    0xE8, 0xC4, 0x79, 0x05, 0x00, // call 0x5A79C4
+    0x8B, 0x06, // mov eax, [esi]
+    0x8B, 0x50, 0x44, // mov edx, [eax+0x44]
+    0x8B, 0xCE, // mov ecx, esi
+    0xFF, 0xD2, // call edx
+    0x85, 0xC0, // test eax, eax
+    0x0F, 0x85, 0xF7, 0x01, 0x00, 0x00, // jne 0x1F7
+    0x66, 0x39, 0x83, // cmp word ptr [ebx+0x83], ax
+    0x8C, 0x00, 0x00, 0x00, // cmp word ptr [ebx], 0
+    0x0F, 0x85, 0xEA, 0x01, 0x00, 0x00, // jne 0x1EAC
+    0xF7, 0x83, 0x88, 0x00, 0x00, 0x00, // test dword ptr [ebx+0x88], 0
+    0x00, 0x04, 0x00, 0x00, // add [ebx+0x4], al
+    0x8B, 0x7D, 0x0C, // mov edi, [ebp+0xC]
+    0x74, 0x18, // je 0x18
+];
+
+/// Hooks the game [ProcessEvent] function to use [fake_process_event] instead
+/// to allow processing events that occur in the game
+#[allow(clippy::missing_safety_doc)]
+pub unsafe fn hook_process_event() {
+    let (_, target) = *ORIGINAL_PROCESS_EVENT;
+    MinHook::enable_hook(target as *mut c_void).expect("failed to enable process event hook");
+}
+
+/// Calls the original ProcessEvent function
+///
+/// # Safety
+///
+/// Memory for the process event call should always point to
+/// the valid ProcessEvent function as long as the binary
+/// offset doesn't change
+pub unsafe fn process_event(
+    this: *mut UObject,
+    func: *mut UFunction,
+    params: *mut c_void,
+    result: *mut c_void,
+) {
+    let (original_fn, _) = *ORIGINAL_PROCESS_EVENT;
+
+    // Call the original function
+    original_fn(this, func, params, result);
+}
+
+/// Hooked ProcessEvent function that allows extending the games
+/// behavior by listing for specific events
+///
+/// # Safety
+///
+/// Checks are made on pointers that are used, most events are forwarded
+/// directly to the original function.
+#[no_mangle]
+pub unsafe extern "thiscall" fn fake_process_event(
+    object: *mut UObject,
+    func: *mut UFunction,
+    params: *mut c_void,
+    result: *mut c_void,
+) {
+    process_event(object, func, params, result);
+}

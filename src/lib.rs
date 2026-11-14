@@ -7,6 +7,7 @@ use windows_sys::Win32::System::SystemServices::{DLL_PROCESS_ATTACH, DLL_PROCESS
 
 use crate::rpc::{initialize_rpc, initialize_services};
 
+pub mod game;
 pub mod hooks;
 pub mod rpc;
 pub mod threads;
